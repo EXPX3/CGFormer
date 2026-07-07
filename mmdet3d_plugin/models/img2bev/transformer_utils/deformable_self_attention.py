@@ -10,6 +10,8 @@
 #  Modified by Zhiqi Li
 # ---------------------------------------------
 
+import os
+
 from .multi_scale_deformable_attn_function import MultiScaleDeformableAttnFunction_fp32
 from mmcv.ops.multi_scale_deform_attn import multi_scale_deformable_attn_pytorch
 import warnings
@@ -242,7 +244,8 @@ class DeformSelfAttention(BaseModule):
             raise ValueError(
                 f'Last dim of reference_points must be'
                 f' 2 or 4, but get {reference_points.shape[-1]} instead.')
-        if torch.cuda.is_available() and value.is_cuda:
+        force_pytorch = os.environ.get('CGFORMER_FORCE_PYTORCH_DEFORM_SELF', '0') == '1'
+        if torch.cuda.is_available() and value.is_cuda and not force_pytorch:
 
             # using fp16 deformable attention is unstable because it performs many sum operations
             if value.dtype == torch.float16:

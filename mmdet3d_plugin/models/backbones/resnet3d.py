@@ -6,7 +6,10 @@ from mmcv.cnn.bricks.conv_module import ConvModule
 from mmdet.models import BACKBONES
 from mmdet.models.backbones.resnet import Bottleneck
 from mmcv.cnn import build_conv_layer, build_norm_layer, build_plugin_layer
-from timm.layers import DropPath
+try:
+    from timm.layers import DropPath
+except ModuleNotFoundError:
+    from timm.models.layers import DropPath
 
 class BasicBlock(BaseModule):
     expansion = 1

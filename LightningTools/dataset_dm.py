@@ -9,8 +9,11 @@ class DataModule(pl.LightningDataModule):
     ):
         super().__init__()
         self.trainset_config = config.data.train
-        self.testset_config = config.data.test
         self.valset_config = config.data.val
+        if getattr(config, 'eval', False) and getattr(config, 'eval_split', 'test') == 'val':
+            self.testset_config = config.data.val
+        else:
+            self.testset_config = config.data.test
 
         self.train_dataloader_config = config.train_dataloader_config
         self.test_dataloader_config = config.test_dataloader_config
@@ -28,7 +31,7 @@ class DataModule(pl.LightningDataModule):
             batch_size=self.train_dataloader_config.batch_size,
             drop_last=True,
             num_workers=self.train_dataloader_config.num_workers,
-            shuffle=True,
+            shuffle=getattr(self.train_dataloader_config, 'shuffle', True),
             pin_memory=True)
     
     def val_dataloader(self):

@@ -205,7 +205,7 @@ class VoxFormerEncoder(TransformerLayerSequence):
         intermediate = []
 
         ref_2d = self.get_reference_points(
-            512, 512, dim='2d', bs=bev_query.size(1), device=bev_query.device, dtype=bev_query.dtype)
+            bev_h, bev_w, dim='2d', bs=bev_query.size(1), device=bev_query.device, dtype=bev_query.dtype)
 
         bs, len_bev, num_bev_level, _ = ref_2d.shape
 

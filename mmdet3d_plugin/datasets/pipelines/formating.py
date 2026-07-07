@@ -77,12 +77,13 @@ class CollectData(object):
         data = {}
         img_metas = {}
         for key in self.meta_keys:
-            if key in results:
+            if key in results and results[key] is not None:
                 img_metas[key] = results[key]
 
         data['img_metas'] = img_metas
         for key in self.keys:
-            data[key] = results[key]
+            if key in results and results[key] is not None:
+                data[key] = results[key]
         return data
 
     def __repr__(self):

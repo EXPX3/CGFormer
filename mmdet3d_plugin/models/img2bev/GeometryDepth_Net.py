@@ -6,7 +6,7 @@ from mmdet3d_plugin.utils.gaussian import generate_guassian_depth_target
 from mmcv.runner import BaseModule, force_fp32
 from torch.cuda.amp.autocast_mode import autocast
 from .modules.Mono_DepthNet_modules import DepthNet
-from .modules.Stereo_Depth_Net_modules import SimpleUnet, convbn_2d, DepthAggregation
+from .modules.Stereo_Depth_Net_modules import SimpleUnet, convbn_2d, DepthAggregation_wo_neighbor
 import pdb
 
 class StereoVolumeEncoder(nn.Module):
@@ -35,6 +35,7 @@ class GeometryDepth_Net(BaseModule):
         grid_config=None,
         loss_depth_weight=1.0,
         loss_depth_type='bce',
+        altitude_conditioning=False,
     ):
         super(GeometryDepth_Net, self).__init__()
 
@@ -56,10 +57,42 @@ class GeometryDepth_Net(BaseModule):
         
         self.loss_depth_weight = loss_depth_weight
         self.loss_depth_type = loss_depth_type
+        self.altitude_conditioning = bool(altitude_conditioning)
 
         self.constant_std = 0.5
 
-        self.depth_aggregation = DepthAggregation(embed_dims=32, out_channels=1)
+        self.depth_aggregation = DepthAggregation_wo_neighbor(embed_dims=32, out_channels=1)
+        self.last_depth_logits = None
+        self.last_depth_probs = None
+        self.last_depth_pred = None
+
+    def _meta_value(self, img_metas, key, device, dtype):
+        value = img_metas.get(key) if isinstance(img_metas, dict) else None
+        if value is None:
+            return None
+        if isinstance(value, (list, tuple)) and len(value) == 1:
+            value = value[0]
+        if torch.is_tensor(value):
+            return value.to(device=device, dtype=dtype)
+        return torch.as_tensor(value, device=device, dtype=dtype)
+
+    def _append_altitude_conditioning(self, mlp_input, img_metas):
+        if not self.altitude_conditioning:
+            return mlp_input
+        altitude = self._meta_value(img_metas, 'altitude', mlp_input.device, mlp_input.dtype)
+        if altitude is None:
+            altitude = mlp_input.new_zeros((mlp_input.shape[0],))
+        altitude = altitude.flatten()
+        if altitude.numel() == 1 and mlp_input.shape[0] > 1:
+            altitude = altitude.repeat(mlp_input.shape[0])
+        altitude = altitude[:mlp_input.shape[0]].view(-1, 1)
+        altitude = torch.log1p(altitude.clamp_min(0.0)) / torch.log(mlp_input.new_tensor(128.0))
+        altitude = altitude.view(mlp_input.shape[0], 1, 1).repeat(1, mlp_input.shape[1], 1)
+        return torch.cat([mlp_input, altitude], dim=-1)
+
+    def depth_values(self, device=None, dtype=None):
+        start, stop, step = self.grid_config['dbound']
+        return torch.arange(start, stop, step, device=device, dtype=dtype)
     
     @force_fp32()
     def get_bce_depth_loss(self, depth_labels, depth_preds):
@@ -196,6 +229,7 @@ class GeometryDepth_Net(BaseModule):
         B, N, C, H, W = x.shape
         x = x.view(B * N, C, H, W)
 
+        mlp_input = self._append_altitude_conditioning(mlp_input, img_metas)
         x = self.depth_net(x, mlp_input)
         mono_digit = x[:, :self.D, ...]
         mono_volume = self.get_depth_dist(mono_digit)
@@ -207,5 +241,10 @@ class GeometryDepth_Net(BaseModule):
         stereo_volume = self.get_depth_dist(stereo_volume)
 
         depth_volume = self.depth_aggregation(stereo_volume, mono_volume)
+        depth_logits = depth_volume
         depth_volume = self.get_depth_dist(depth_volume)
+        values = self.depth_values(device=depth_volume.device, dtype=depth_volume.dtype).view(1, self.D, 1, 1)
+        self.last_depth_logits = depth_logits
+        self.last_depth_probs = depth_volume
+        self.last_depth_pred = (depth_volume * values).sum(dim=1, keepdim=True)
         return img_feat.view(B, N, -1, H, W), depth_volume

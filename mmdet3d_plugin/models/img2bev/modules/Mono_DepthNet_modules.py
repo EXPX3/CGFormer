@@ -106,7 +106,7 @@ class ASPP(nn.Module):
         self.global_avg_pool = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Conv2d(inplanes, mid_channels, 1, stride=1, bias=False),
-            BatchNorm(mid_channels),
+            nn.GroupNorm(32, mid_channels),
             nn.ReLU(),
         )
         self.conv1 = nn.Conv2d(int(mid_channels * 5),
@@ -178,15 +178,12 @@ class DepthNet(nn.Module):
             BasicBlock(depth_channels, depth_channels),
             BasicBlock(depth_channels, depth_channels),
             ASPP(depth_channels, depth_channels),
-            build_conv_layer(cfg=dict(
-                type='DCN',
-                in_channels=depth_channels,
-                out_channels=depth_channels,
-                kernel_size=3,
-                padding=1,
-                groups=4,
-                im2col_step=128,
-            )),
+            nn.Conv2d(depth_channels,
+                      depth_channels,
+                      kernel_size=3,
+                      stride=1,
+                      padding=1,
+                      groups=4),
             nn.Conv2d(depth_channels,
                       depth_channels,
                       kernel_size=1,
@@ -195,7 +192,18 @@ class DepthNet(nn.Module):
         )
 
     def forward(self, x, mlp_input):
-        mlp_input = self.bn(mlp_input.reshape(-1, mlp_input.shape[-1]))
+        mlp_input = mlp_input.reshape(-1, mlp_input.shape[-1])
+        if self.training and mlp_input.shape[0] == 1:
+            mlp_input = F.batch_norm(
+                mlp_input,
+                self.bn.running_mean,
+                self.bn.running_var,
+                self.bn.weight,
+                self.bn.bias,
+                training=False,
+                eps=self.bn.eps)
+        else:
+            mlp_input = self.bn(mlp_input)
         x = self.reduce_conv(x)
         context_se = self.context_mlp(mlp_input)[..., None, None]
         context = self.context_se(x, context_se)

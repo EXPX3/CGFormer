@@ -22,6 +22,7 @@ def parse_config():
     parser.add_argument('--test_mapping', action='store_true')
     parser.add_argument('--submit', action='store_true')
     parser.add_argument('--eval', action='store_true')
+    parser.add_argument('--eval_split', default='test', choices=('val', 'test'))
     parser.add_argument('--log_every_n_steps', type=int, default=1000)
     parser.add_argument('--check_val_every_n_epoch', type=int, default=1)
     parser.add_argument('--pretrain', action='store_true')
@@ -67,7 +68,7 @@ if __name__ == '__main__':
                 find_unused_parameters=False
             ),
             max_steps=config.training_steps,
-            resume_from_checkpoint=None,
+            resume_from_checkpoint=config['ckpt_path'],
             callbacks=[
                 checkpoint_callback,
                 LearningRateMonitor(logging_interval='step')
@@ -92,4 +93,3 @@ if __name__ == '__main__':
         trainer.test(model=model, datamodule=data_dm, ckpt_path=config['ckpt_path'])
 
     
-

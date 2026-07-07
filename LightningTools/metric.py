@@ -9,9 +9,16 @@ class SSCMetrics:
         self.completion_tp = 0
         self.completion_fp = 0
         self.completion_fn = 0
+        self.valid_voxels = 0
+        self.occupied_gt_voxels = 0
+        self.occupied_pred_voxels = 0
         self.tps = np.zeros(self.n_classes)
         self.fps = np.zeros(self.n_classes)
         self.fns = np.zeros(self.n_classes)
+        self.gt_voxels = np.zeros(self.n_classes)
+        self.pred_voxels = np.zeros(self.n_classes)
+        self.occ_class_fps = np.zeros(self.n_classes)
+        self.occ_class_fns = np.zeros(self.n_classes)
 
         self.hist_ssc = np.zeros((self.n_classes, self.n_classes))
         self.labeled_ssc = 0
@@ -31,6 +38,22 @@ class SSCMetrics:
             mask = mask & nonempty
         if nonsurface is not None:
             mask = mask & nonsurface
+
+        pred_m = y_pred[mask]
+        true_m = y_true[mask]
+        pred_occ = pred_m > 0
+        true_occ = true_m > 0
+        self.valid_voxels += int(mask.sum())
+        self.occupied_gt_voxels += int(true_occ.sum())
+        self.occupied_pred_voxels += int(pred_occ.sum())
+        for cls in range(self.n_classes):
+            pred_cls = pred_m == cls
+            true_cls = true_m == cls
+            self.gt_voxels[cls] += int(true_cls.sum())
+            self.pred_voxels[cls] += int(pred_cls.sum())
+            if cls > 0:
+                self.occ_class_fps[cls] += int(np.logical_and.reduce((pred_cls, true_occ, ~true_cls)).sum())
+                self.occ_class_fns[cls] += int(np.logical_and.reduce((true_cls, pred_occ, ~pred_cls)).sum())
         
         tp, fp, fn = self.get_score_completion(y_pred, y_true, mask)
         

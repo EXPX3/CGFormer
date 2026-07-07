@@ -5,6 +5,9 @@ class LightningBaseModel(pl.LightningModule):
     def __init__(self, config):
         super().__init__()
         self.config = config
+
+    def lr_scheduler_step(self, scheduler, optimizer_idx, metric):
+        scheduler.step()
     
     def configure_optimizers(self):
         if self.config['optimizer']['type'] == 'AdamW':

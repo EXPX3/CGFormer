@@ -66,6 +66,7 @@ class TPVGlobalAggregator(BaseModule):
         global_encoder_neck=None,
     ):
         super().__init__()
+        self.grid_size = grid_size
 
         # max pooling
         self.tpv_pooler = TPVPooler(
@@ -90,9 +91,10 @@ class TPVGlobalAggregator(BaseModule):
             if not isinstance(x_tpv, torch.Tensor):
                 x_tpv = x_tpv[0]
             tpv_list.append(x_tpv)
-        tpv_list[0] = F.interpolate(tpv_list[0], size=(128, 128), mode='bilinear').unsqueeze(-1)
-        tpv_list[1] = F.interpolate(tpv_list[1], size=(128, 16), mode='bilinear').unsqueeze(2)
-        tpv_list[2] = F.interpolate(tpv_list[2], size=(128, 16), mode='bilinear').unsqueeze(3)
+        h, w, z = self.grid_size
+        tpv_list[0] = F.interpolate(tpv_list[0], size=(h, w), mode='bilinear').unsqueeze(-1)
+        tpv_list[1] = F.interpolate(tpv_list[1], size=(w, z), mode='bilinear').unsqueeze(2)
+        tpv_list[2] = F.interpolate(tpv_list[2], size=(h, z), mode='bilinear').unsqueeze(3)
 
         return tpv_list
     

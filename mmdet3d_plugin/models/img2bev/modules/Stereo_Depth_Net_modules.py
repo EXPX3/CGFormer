@@ -3,13 +3,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .Mono_DepthNet_modules import Mlp, SELayer
 from mmcv.cnn import build_norm_layer, build_conv_layer, ConvModule, build_upsample_layer
-from .NeighborhoodAttention import NeighborhoodCrossAttention2D
+try:
+    from .NeighborhoodAttention import NeighborhoodCrossAttention2D
+except ModuleNotFoundError:
+    NeighborhoodCrossAttention2D = None
 
 norm_cfg = dict(type='GN', num_groups=2, requires_grad=True)
 
 class Attention(nn.Module):
     def __init__(self, embed_dims, kernel_size=5):
         super(Attention, self).__init__()
+        if NeighborhoodCrossAttention2D is None:
+            raise RuntimeError('NATTEN is required for neighbor attention; use DepthAggregation_wo_neighbor instead.')
         self.neighbor_atttention = NeighborhoodCrossAttention2D(
             dim=embed_dims, num_heads=1, kernel_size=kernel_size, bias=True, qkv_bias=True
         )

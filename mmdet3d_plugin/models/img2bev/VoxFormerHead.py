@@ -10,6 +10,7 @@
 #  Modified by Zhiqi Li
 # ---------------------------------------------
 
+import math
 import os
 import torch
 import numpy as np
@@ -113,17 +114,29 @@ class VoxFormerHead(nn.Module):
             lss_volume_flatten = lss_volume.flatten(2).squeeze(0).permute(1, 0)
             volume_queries = volume_queries + lss_volume_flatten
 
+        proposal = proposal.reshape(bs, -1)[0]
+        num_voxels = self.volume_h * self.volume_w * self.volume_z
+        if proposal.numel() < num_voxels:
+            proposal = F.pad(proposal, (0, num_voxels - proposal.numel()))
+        elif proposal.numel() > num_voxels:
+            proposal = proposal[:num_voxels]
         if proposal.sum() < 2:
             proposal = torch.ones_like(proposal)
-        # Generate bev postional embeddings for cross and self attention
-        bev_pos_cross_attn = self.positional_encoding(torch.zeros((bs, 512, 512), device=volume_queries.device).to(dtype)).to(dtype) # [1, dim, 128*4, 128*4]
-        bev_pos_self_attn = self.positional_encoding(torch.zeros((bs, 512, 512), device=volume_queries.device).to(dtype)).to(dtype) # [1, dim, 128*4, 128*4]
+        # Match positional slots exactly to the flattened voxel volume.
+        z_factor_h = int(math.sqrt(self.volume_z))
+        while self.volume_z % z_factor_h != 0:
+            z_factor_h -= 1
+        z_factor_w = self.volume_z // z_factor_h
+        pos_h = self.volume_h * z_factor_h
+        pos_w = self.volume_w * z_factor_w
+        bev_pos_cross_attn = self.positional_encoding(torch.zeros((bs, pos_h, pos_w), device=volume_queries.device).to(dtype)).to(dtype)
+        bev_pos_self_attn = self.positional_encoding(torch.zeros((bs, pos_h, pos_w), device=volume_queries.device).to(dtype)).to(dtype)
 
         vox_coords, ref_3d = self.vox_coords.clone(), self.ref_3d.clone()
         # proposal = torch.zeros([bs, self.volume_h, self.volume_w, self.volume_z])
         # proposal[unq[:, 0], unq[:, 1], unq[:, 2], unq[:, 3]] = 1
-        unmasked_idx = torch.nonzero(proposal.reshape(-1) > 0).view(-1)
-        masked_idx = torch.nonzero(proposal.reshape(-1) == 0).view(-1)
+        unmasked_idx = torch.nonzero(proposal > 0).view(-1)
+        masked_idx = torch.nonzero(proposal == 0).view(-1)
         # Compute seed features of query proposals by deformable cross attention
         seed_feats = self.cross_transformer.get_vox_features(
             mlvl_feats,
@@ -152,8 +165,8 @@ class VoxFormerHead(nn.Module):
         vox_feats_diff = self.self_transformer.diffuse_vox_features(
             mlvl_feats,
             vox_feats_flatten,
-            512,
-            512,
+            pos_h,
+            pos_w,
             ref_3d=ref_3d,
             vox_coords=vox_coords,
             unmasked_idx=unmasked_idx,
